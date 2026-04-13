@@ -1,11 +1,12 @@
-About This Repository
+# About This Repository
+
 This code is a modified version of the official the-sqisign implementation.
 
-Our Contributions / Modifications:
+## Our Contributions / Modifications:
 
-Implemented constant-time algorithms for random ideal generation given a norm.
+- Implemented constant-time algorithms for random ideal generation given a norm.
 
-This is the accompanying code for the paper "Efficient Algorithms for Random Ideal Sampling in SQIsign".
+- This is the accompanying code for the paper "Efficient Algorithms for Random Ideal Sampling in SQIsign".
 
 For details regarding the original SQISign project, please refer to the original documentation below.
 
