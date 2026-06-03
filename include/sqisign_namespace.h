@@ -876,6 +876,7 @@
 #undef quat_lattice_O0_set_extremal
 #undef quat_order_elem_create
 #undef quat_represent_integer
+#undef quat_factorize_norm
 #undef quat_sampling_random_ideal_O0_given_norm
 #undef quat_constant_random_O0_ideal_norm_1mod4
 #undef quat_constant_random_O0_ideal_norm_3mod4
@@ -887,6 +888,7 @@
 #define quat_lattice_O0_set_extremal                    SQISIGN_NAMESPACE_GENERIC(quat_lattice_O0_set_extremal)
 #define quat_order_elem_create                          SQISIGN_NAMESPACE_GENERIC(quat_order_elem_create)
 #define quat_represent_integer                          SQISIGN_NAMESPACE_GENERIC(quat_represent_integer)
+#define quat_factorize_norm                             SQISIGN_NAMESPACE_GENERIC(quat_factorize_norm)
 #define quat_sampling_random_ideal_O0_given_norm        SQISIGN_NAMESPACE_GENERIC(quat_sampling_random_ideal_O0_given_norm)
 #define quat_constant_random_O0_ideal_norm_1mod4        SQISIGN_NAMESPACE_GENERIC(quat_constant_random_O0_ideal_norm_1mod4)
 #define quat_constant_random_O0_ideal_norm_3mod4        SQISIGN_NAMESPACE_GENERIC(quat_constant_random_O0_ideal_norm_3mod4)

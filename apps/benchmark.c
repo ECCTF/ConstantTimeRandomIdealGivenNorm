@@ -118,7 +118,7 @@ main(int argc, char *argv[])
     randombytes_init((unsigned char *)seed, NULL, 256);
     cpucycles_init();
 
-    bench(1);
+    bench(iterations);
 
     return 0;
 }

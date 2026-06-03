@@ -782,6 +782,8 @@ int quat_generate_random_O0_ideal_norm_non_prime(quat_left_ideal_t *lideal,
                                                  const ibz_t *powers,    
                                                  const int num_factors);  
 
+void quat_factorize_norm(const ibz_t *norm, ibz_t *primes, ibz_t *powers, int *num_factors);
+
 // end quat_normeq
 /** @}
  */

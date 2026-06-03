@@ -676,6 +676,96 @@ int quat_constant_random_O0_ideal_norm_universal(quat_left_ideal_t *lideal,
     return 1;
 }
 
+// ==================== Auxiliary function for factorization ====================
+// Pollard's rho algorithm for finding single factor
+static void pollards_rho(ibz_t *factor, const ibz_t *n) {
+    ibz_t x, y, d, c, diff;
+    ibz_init(&x); ibz_init(&y); ibz_init(&d); ibz_init(&c); ibz_init(&diff);
+    ibz_set(&x, 2); ibz_set(&y, 2); ibz_set(&d, 1); ibz_set(&c, 1);
+
+    while (ibz_cmp(&d, &ibz_const_one) == 0) {
+        // x = (x^2 + c) mod n
+        ibz_mul(&x, &x, &x); ibz_add(&x, &x, &c); ibz_mod(&x, &x, n);
+        // y = ((y^2 + c)^2 + c) mod n
+        ibz_mul(&y, &y, &y); ibz_add(&y, &y, &c); ibz_mod(&y, &y, n);
+        ibz_mul(&y, &y, &y); ibz_add(&y, &y, &c); ibz_mod(&y, &y, n);
+        
+        ibz_sub(&diff, &x, &y);
+        ibz_abs(&diff, &diff);
+        ibz_gcd(&d, &diff, n);
+        
+        if (ibz_cmp(&d, n) == 0) { // if fails, try again with different parameters.
+            ibz_add(&c, &c, &ibz_const_one);
+            ibz_set(&x, 2); ibz_set(&y, 2); ibz_set(&d, 1);
+        }
+    }
+    ibz_copy(factor, &d);
+    ibz_finalize(&x); ibz_finalize(&y); ibz_finalize(&d); ibz_finalize(&c); ibz_finalize(&diff);
+}
+
+// Recursive decomposition: the `powers` array stores `q_i^{e_i}`.
+static void factorize_recursive(const ibz_t *n, ibz_t *primes, ibz_t *powers, int *num_factors) {
+    if (ibz_cmp(n, &ibz_const_one) <= 0) return;
+    
+    ibz_t temp, rem;
+    ibz_init(&temp); ibz_init(&rem);
+    ibz_copy(&temp, n);
+
+    // if n is prime, return.
+    if (ibz_probab_prime(&temp, 40)) {
+        for (int i = 0; i < *num_factors; i++) {
+            if (ibz_cmp(&primes[i], &temp) == 0) {
+                ibz_mul(&powers[i], &powers[i], &temp); // powers[i] *= p
+                ibz_finalize(&temp); ibz_finalize(&rem);
+                return;
+            }
+        }
+        ibz_copy(&primes[*num_factors], &temp);
+        ibz_copy(&powers[*num_factors], &temp);
+        (*num_factors)++;
+        ibz_finalize(&temp); ibz_finalize(&rem);
+        return;
+    }
+
+    // if n is composite, use Pollard's rho to find a factor d.
+    ibz_t d;
+    ibz_init(&d);
+    pollards_rho(&d, &temp);
+    
+    // recursively decompose d and temp/d
+    factorize_recursive(&d, primes, powers, num_factors);
+    ibz_div(&temp, &rem, &temp, &d);
+    factorize_recursive(&temp, primes, powers, num_factors);
+    
+    ibz_finalize(&d); ibz_finalize(&temp); ibz_finalize(&rem);
+}
+
+// // Externally called main decomposition function
+void quat_factorize_norm(const ibz_t *norm, ibz_t *primes, ibz_t *powers, int *num_factors) {
+    *num_factors = 0;
+    ibz_t temp, rem, two;
+    ibz_init(&temp); ibz_init(&rem); ibz_init(&two);
+    ibz_copy(&temp, norm);
+    ibz_set(&two, 2);
+
+    // Remove even factors
+    while (ibz_is_even(&temp)) {
+        if (*num_factors == 0 || ibz_cmp(&primes[0], &two) != 0) {
+            ibz_copy(&primes[*num_factors], &two);
+            ibz_copy(&powers[*num_factors], &two);
+            (*num_factors)++;
+        } else {
+            ibz_mul(&powers[0], &powers[0], &two);
+        }
+        ibz_div_2exp(&temp, &temp, 1);
+    }
+    
+    factorize_recursive(&temp, primes, powers, num_factors);
+    
+    ibz_finalize(&temp); ibz_finalize(&rem); ibz_finalize(&two);
+}
+
+// ==================== Algorithm 7 Main Function ====================
 int quat_generate_random_O0_ideal_norm_non_prime(quat_left_ideal_t *lideal,
                                                  const quat_represent_integer_params_t *params,
                                                  const ibz_t *norm,
@@ -685,83 +775,89 @@ int quat_generate_random_O0_ideal_norm_non_prime(quat_left_ideal_t *lideal,
 {
     if (num_factors <= 0) return 0;
 
-    ibz_t c, xi, yi, m, target, inv_y, inv_2, tmp, two, q_minus_1, M_i, inv_Mi, rem, two_N, two_N_minus_y;
-    ibz_t x, y;
+    ibz_t c, xi, yi, m, target, inv_y, tmp, M_i, inv_Mi, rem, two_N, two_N_minus_y;
+    ibz_t x, y, term;
+    
+    // initialization
     ibz_init(&c); ibz_init(&xi); ibz_init(&yi); ibz_init(&m); ibz_init(&target); 
-    ibz_init(&inv_y); ibz_init(&inv_2); ibz_init(&tmp); ibz_init(&two); 
-    ibz_init(&q_minus_1); ibz_init(&M_i); ibz_init(&inv_Mi); ibz_init(&rem);
-    ibz_init(&x); ibz_init(&y);
+    ibz_init(&inv_y); ibz_init(&tmp); 
+    ibz_init(&M_i); ibz_init(&inv_Mi); ibz_init(&rem);
+    ibz_init(&x); ibz_init(&y); ibz_init(&term);
     ibz_init(&two_N); ibz_init(&two_N_minus_y);
 
-    ibz_copy(&two, &ibz_const_two);
-    ibz_copy(&x, &ibz_const_zero);
-    ibz_copy(&y, &ibz_const_zero);
+    ibz_set(&x, 0);
+    ibz_set(&y, 0);
 
-    // Compute c = -p^{-1} mod N
+    // compute c = -p^{-1} mod N
     ibz_invmod(&c, &(params->algebra->p), norm);
     ibz_sub(&c, norm, &c);
 
-    // Compute x^2 + y^2 = c mod N
+    // solve x_i^2 + y_i^2 = c mod q_i^{e_i}
     for (int i = 0; i < num_factors; i++) {
-        ibz_sub(&q_minus_1, &primes[i], &ibz_const_one); 
         
         // Tonelli-Shanks: compute x_i^2 + y_i^2 = c mod q_i
         while (1) {
-            ibz_rand_interval(&xi, &ibz_const_zero, &q_minus_1); // x_i in [0, q_i - 1]
+            ibz_rand_interval(&xi, &ibz_const_zero, &primes[i]); 
             ibz_mul(&tmp, &xi, &xi);
             ibz_sub(&tmp, &c, &tmp);          
             ibz_mod(&tmp, &tmp, &primes[i]); 
             
-            if (ibz_is_zero(&tmp) && ibz_cmp(&primes[i], &powers[i]) != 0) continue; 
-            if (ibz_legendre(&tmp, &primes[i]) == 1) {
+            if (ibz_cmp(&tmp, &ibz_const_zero) < 0) {
+                ibz_add(&tmp, &tmp, &primes[i]);
+            }
+            
+            // if e_i > 1, then y_i != 0, otherwise the Hensel boost will fail.
+            if (ibz_is_zero(&tmp) && ibz_cmp(&primes[i], &powers[i]) != 0) {
+                continue; 
+            }
+            
+            if (ibz_legendre(&tmp, &primes[i]) == 1 || ibz_is_zero(&tmp)) {
                 ibz_sqrt_mod_p(&yi, &tmp, &primes[i]); 
                 break;
             }
         }
 
-        // Hensel boost: compute x_i^2 + y_i^2 = c mod q_i^{e_i} 
-        // if e_i = 1, skip
+        // Hensel boost: calculate x_i^2 + y_i^2 = c mod q_i^{e_i}
         if (ibz_cmp(&primes[i], &powers[i]) != 0) {
             ibz_copy(&m, &primes[i]);
             ibz_mul(&target, &xi, &xi);
             ibz_sub(&target, &c, &target); 
-            ibz_mod(&target, &target, &powers[i]); // Target = c - x_i^2 mod q_i^{e_i}
+            ibz_mod(&target, &target, &powers[i]);
+            if (ibz_cmp(&target, &ibz_const_zero) < 0) {
+                ibz_add(&target, &target, &powers[i]);
+            }
 
             while (ibz_cmp(&m, &powers[i]) < 0) {
                 ibz_mul(&m, &m, &m); 
                 if (ibz_cmp(&m, &powers[i]) > 0) ibz_copy(&m, &powers[i]); 
-
-                // y_new = (y_old + target * y_old^(-1)) * 2^(-1) mod q_i
-                // After each iteration, the exponent doubles
+                ibz_mod(&tmp, &target, &m);
                 ibz_invmod(&inv_y, &yi, &m);
-                ibz_mul(&tmp, &target, &inv_y);
+                ibz_mul(&tmp, &tmp, &inv_y);
+                ibz_mod(&tmp, &tmp, &m); 
                 ibz_add(&yi, &yi, &tmp);
 
-                ibz_invmod(&inv_2, &two, &m);
-                ibz_mul(&yi, &yi, &inv_2);
-                ibz_mod(&yi, &yi, &m);
+                if (ibz_is_odd(&yi)) {
+                    ibz_add(&yi, &yi, &m);
+                }
+                ibz_div_2exp(&yi, &yi, 1); 
             }
         }
 
-        // CRT: compute x = x_1 * M_1 * M_1^{-1} + ... + x_n * M_n * M_n^{-1}
-        //              y = y_1 * M_1 * M_1^{-1} + ... + y_n * M_n * M_n^{-1}
-        // x^2 + y^2 = c mod N
+        // Chinese Reminder Theorem
         ibz_div(&M_i, &rem, norm, &powers[i]); // M_i = N / q_i^{e_i}
         ibz_invmod(&inv_Mi, &M_i, &powers[i]); // M_i^-1 mod q_i^{e_i}
-
-        // out_x += x_i * M_i * inv_Mi
-        ibz_mul(&tmp, &xi, &M_i);
-        ibz_mul(&tmp, &tmp, &inv_Mi);
-        ibz_add(&x, &x, &tmp);
-
-        // out_y += y_i * M_i * inv_Mi
-        ibz_mul(&tmp, &yi, &M_i);
-        ibz_mul(&tmp, &tmp, &inv_Mi);
-        ibz_add(&y, &y, &tmp);
+        // tmp = M_i * inv_Mi mod norm
+        ibz_mul(&tmp, &M_i, &inv_Mi);
+        ibz_mod(&tmp, &tmp, norm);
+        // x = (x + xi * tmp) mod norm
+        ibz_mul(&term, &xi, &tmp);
+        ibz_add(&x, &x, &term);
+        ibz_mod(&x, &x, norm);
+        // y = (y + yi * tmp) mod norm
+        ibz_mul(&term, &yi, &tmp);
+        ibz_add(&y, &y, &term);
+        ibz_mod(&y, &y, norm);
     }
-    // Global modulo N
-    ibz_mod(&x, &x, norm);
-    ibz_mod(&y, &y, norm);
 
     // x, y in [0, 2*N], x is even and y is odd, make sure basis of I in O0 
     if (ibz_is_odd(&x)) { 
@@ -802,10 +898,10 @@ int quat_generate_random_O0_ideal_norm_non_prime(quat_left_ideal_t *lideal,
     ibz_copy(&lideal->norm, norm);
 
     ibz_finalize(&c); ibz_finalize(&xi); ibz_finalize(&yi); ibz_finalize(&m); 
-    ibz_finalize(&target); ibz_finalize(&inv_y); ibz_finalize(&inv_2); 
-    ibz_finalize(&tmp); ibz_finalize(&two); ibz_finalize(&q_minus_1);
+    ibz_finalize(&target); ibz_finalize(&inv_y); 
+    ibz_finalize(&tmp); 
     ibz_finalize(&M_i); ibz_finalize(&inv_Mi); ibz_finalize(&rem);
-    ibz_finalize(&x); ibz_finalize(&y);
+    ibz_finalize(&x); ibz_finalize(&y); ibz_finalize(&term);
     ibz_finalize(&two_N); ibz_finalize(&two_N_minus_y);
 
     return 1;

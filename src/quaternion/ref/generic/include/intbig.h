@@ -306,6 +306,33 @@ void ibz_sqrt_floor(ibz_t *sqrt, const ibz_t *a);
  */
 void ibz_complex_pow_mod(ibz_t *u, ibz_t *v, const ibz_t *u0, const ibz_t *v0, const ibz_t *exp, const ibz_t *N);
 
+/**
+ * @brief Legendre symbol (a/p)
+ *
+ * @param a
+ * @param p prime number
+ * @returns 1 if a is a quadratic residue, -1 if non-residue, 0 if a = 0 mod p
+ */
+int ibz_legendre(const ibz_t *a, const ibz_t *p);
+
+/**
+ * @brief Exact square root
+ *
+ * @param sqrt Output: Set to the square root if a is a perfect square
+ * @param a
+ * @returns 1 if a is a perfect square, 0 otherwise
+ */
+int ibz_sqrt(ibz_t *sqrt, const ibz_t *a);
+
+/**
+ * @brief Modular square root
+ *
+ * @param sqrt Output: Set to the square root of a mod p
+ * @param a
+ * @param p prime number
+ * @returns 1 if square root exists, 0 otherwise
+ */
+int ibz_sqrt_mod_p(ibz_t *sqrt, const ibz_t *a, const ibz_t *p);
 /** @}
  */
 

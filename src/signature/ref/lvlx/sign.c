@@ -374,18 +374,33 @@ evaluate_random_aux_isogeny_signature(ec_curve_t *E_aux,
     quat_left_ideal_init(&lideal_aux);
     quat_left_ideal_init(&lideal_aux_resp_com);
 
-    // sampling the ideal at random
-    // size_t t = 1000;
-    // algorithm 3 universal
-    // BENCH_CODE_1(t);
-    compute_auxiliary_parameters_for_alg3(norm, &x0, &y0, &minus_y0, &x0_plus_y0);
-    found = quat_constant_random_O0_ideal_norm_universal(
-          &lideal_aux, &QUAT_represent_integer_params, norm, &x0, &y0, &minus_y0, &x0_plus_y0
-    );
-    // BENCH_CODE_2("test");
-    // origin algorithm
+    // Origin algorithm:
     // found = quat_sampling_random_ideal_O0_given_norm(
     //       &lideal_aux, norm, 0, &QUAT_represent_integer_params, &QUAT_prime_cofactor);
+    // Factorization + Algorithm 7:
+    // initialize the array
+    int num_factors = 0;
+    ibz_t primes[50], powers[50];
+    for (int i = 0; i < 50; i++) {
+        ibz_init(&primes[i]);
+        ibz_init(&powers[i]);
+    }
+    // Call the factorization helper function in normeq.c
+    quat_factorize_norm(norm, primes, powers, &num_factors);
+    // Call Algorithm 7 to generate the ideal of the given norm
+    found = quat_generate_random_O0_ideal_norm_non_prime(
+        &lideal_aux, 
+        &QUAT_represent_integer_params, 
+        norm, 
+        primes, 
+        powers, 
+        num_factors
+    );
+    // clean up memory
+    for (int i = 0; i < 50; i++) {
+        ibz_finalize(&primes[i]);
+        ibz_finalize(&powers[i]);
+    }
 
     if (found) {
         // pushing forward
@@ -665,18 +680,18 @@ protocols_sign(signature_t *sig, const public_key_t *pk, secret_key_t *sk, const
     int ret = 0;
     int reduced_order = 0; // work around false positive gcc warning
 
-    uint_fast8_t pow_dim2_deg_resp = 0;
+    uint_fast8_t pow_dim2_deg_resp;
     assert(SQIsign_response_length <= (intmax_t)UINT_FAST8_MAX); // otherwise we might need more bits there
 
-    ibz_t remain, lattice_content, random_aux_norm, degree_resp_inv, tmp;
+    ibz_t remain, lattice_content, random_aux_norm, degree_resp_inv;
     ibz_init(&remain);
     ibz_init(&lattice_content);
     ibz_init(&random_aux_norm);
     ibz_init(&degree_resp_inv);
-    ibz_init(&tmp);
 
     quat_alg_elem_t resp_quat;
     quat_alg_elem_init(&resp_quat);
+
     quat_left_ideal_t lideal_commit, lideal_com_resp;
     quat_left_ideal_init(&lideal_commit);
     quat_left_ideal_init(&lideal_com_resp);
@@ -693,87 +708,49 @@ protocols_sign(signature_t *sig, const public_key_t *pk, secret_key_t *sk, const
 
     ec_curve_init(&Ecom_Eaux.E1);
     ec_curve_init(&Ecom_Eaux.E2);
-    size_t t = 1000;
 
     while (!ret) {
 
-        // ibz_t rem, four;
-        // ibz_init(&rem);
-        // ibz_init(&four);
-        // ibz_set(&four, 4);
+        // computing the commitment
+        ret = commit(&Ecom_Eaux.E1, &Ecom_Eaux.B1, &lideal_commit);
 
-        while(1) {
-            // computing the commitment
-            BENCH_CODE_1(t);
-            ret = commit(&Ecom_Eaux.E1, &Ecom_Eaux.B1, &lideal_commit);
+        // start again if the commitment generation has failed
+        if (!ret) {
+            continue;
+        }
 
-            // start again if the commitment generation has failed
-            if (!ret) {
-                continue;
-            }
+        // Hash the message to a kernel generator
+        // i.e. a scalar such that ker = P + [s]Q
+        hash_to_challenge(&sig->chall_coeff, pk, &Ecom_Eaux.E1, m, l);
 
-            // Hash the message to a kernel generator
-            // i.e. a scalar such that ker = P + [s]Q
-            hash_to_challenge(&sig->chall_coeff, pk, &Ecom_Eaux.E1, m, l);
-            BENCH_CODE_2("test");
-            // Compute the challenge ideal and response quaternion element
+        // Compute the challenge ideal and response quaternion element
+        {
             quat_left_ideal_t lideal_chall_two;
-            quat_lattice_t lattice_hom_chall_to_com;
-
-            quat_lattice_init(&lattice_hom_chall_to_com);
             quat_left_ideal_init(&lideal_chall_two);
+
             // computing the challenge ideal
-            // extracting the sampling function, avoid compute challenge isogeny repeatly
             compute_challenge_ideal_signature(&lideal_chall_two, sig, sk);
-            compute_response_quat_element_extract(&resp_quat, &lattice_content, &lattice_hom_chall_to_com, sk, &lideal_chall_two, &lideal_commit);
-            ibz_copy(&tmp, &lattice_content);
-
-            int max_inner_retries = 80;
-            int inner_success = 0;
-
-            for (int i = 0; i < max_inner_retries; i++) {
-                // compute_response_quat_element(&resp_quat, &lattice_content, sk, &lideal_chall_two, &lideal_commit);
-                sample_response(&resp_quat, &lattice_hom_chall_to_com, &lattice_content);
-
-                // computing the amount of backtracking we're making
-                // and removing it
-                compute_backtracking_signature(sig, &resp_quat, &lattice_content, &remain);
-
-                // creating lideal_com * lideal_resp
-                // we first compute the norm of lideal_resp
-                // norm of the resp_quat
-                pow_dim2_deg_resp = compute_random_aux_norm_and_helpers(sig,
-                                                                        &random_aux_norm,
-                                                                        &degree_resp_inv,
-                                                                        &remain,
-                                                                        &lattice_content,
-                                                                        &resp_quat,
-                                                                        &lideal_com_resp,
-                                                                        &lideal_commit);
-                ibz_copy(&lattice_content, &tmp);
-                // ibz_mod(&rem, &random_aux_norm, &four);
-
-                // && !ibz_cmp(&rem, &ibz_const_three) == 0
-                if (ibz_probab_prime(&random_aux_norm, 40)) {  
-                    inner_success = 1;  
-                    break;             
-                }
-            }
-
-            if (inner_success) {
-                quat_left_ideal_finalize(&lideal_chall_two);
-                quat_lattice_finalize(&lattice_hom_chall_to_com);
-                break;
-            }
+            compute_response_quat_element(&resp_quat, &lattice_content, sk, &lideal_chall_two, &lideal_commit);
 
             // Clean up
             quat_left_ideal_finalize(&lideal_chall_two);
-            quat_lattice_finalize(&lattice_hom_chall_to_com);
         }
-        // ibz_finalize(&rem);
-        // ibz_finalize(&four);
-        // ibz_print(&random_aux_norm, 10);
-        // printf("\n");
+
+        // computing the amount of backtracking we're making
+        // and removing it
+        compute_backtracking_signature(sig, &resp_quat, &lattice_content, &remain);
+
+        // creating lideal_com * lideal_resp
+        // we first compute the norm of lideal_resp
+        // norm of the resp_quat
+        pow_dim2_deg_resp = compute_random_aux_norm_and_helpers(sig,
+                                                                &random_aux_norm,
+                                                                &degree_resp_inv,
+                                                                &remain,
+                                                                &lattice_content,
+                                                                &resp_quat,
+                                                                &lideal_com_resp,
+                                                                &lideal_commit);
 
         // notational conventions:
         // B0 = canonical basis of E0
@@ -813,8 +790,7 @@ protocols_sign(signature_t *sig, const public_key_t *pk, secret_key_t *sk, const
                 &Eaux2_Echall2, &Ecom_Eaux, &degree_resp_inv, pow_dim2_deg_resp, sig->two_resp_length, reduced_order);
             if (!ret)
                 continue;
-        } 
-        else {
+        } else {
             // No 2d isogeny needed, so simulate a "Kani matrix" identity here
             copy_curve(&Eaux2_Echall2.E1, &Ecom_Eaux.E1);
             copy_curve(&Eaux2_Echall2.E2, &Ecom_Eaux.E1);
@@ -853,10 +829,10 @@ protocols_sign(signature_t *sig, const public_key_t *pk, secret_key_t *sk, const
     ibz_finalize(&remain);
     ibz_finalize(&degree_resp_inv);
     ibz_finalize(&random_aux_norm);
-    // test_norm_with_factors(10, &QUAT_represent_integer_params);
 
     return ret;
 }
+
 
 // The following code is for testing the algorithm's performance while N prime factors are known
 #define MAX_FACTORS 15

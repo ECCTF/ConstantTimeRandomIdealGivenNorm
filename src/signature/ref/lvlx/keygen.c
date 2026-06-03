@@ -38,7 +38,7 @@ protocols_keygen(public_key_t *pk, secret_key_t *sk)
         // BENCH_CODE_2("ideal alg3 1mod4");
 
         // BENCH_CODE_1(RUNS);
-        found = quat_constant_random_O0_ideal_norm_universal(&sk->secret_ideal, &QUAT_represent_integer_params, &SEC_DEGREE, &X0, &Y0, &MINUS_Y0, &X0_PLUS_Y0);
+        //found = quat_constant_random_O0_ideal_norm_universal(&sk->secret_ideal, &QUAT_represent_integer_params, &SEC_DEGREE, &X0, &Y0, &MINUS_Y0, &X0_PLUS_Y0);
         // BENCH_CODE_2("ideal alg3 3mod4");
 
         // BENCH_CODE_1(RUNS);
@@ -46,7 +46,7 @@ protocols_keygen(public_key_t *pk, secret_key_t *sk)
         // BENCH_CODE_2("ideal alg2 3mod4");
 
         // BENCH_CODE_1(RUNS);
-        // found = quat_sampling_random_ideal_O0_given_norm(&sk->secret_ideal, &SEC_DEGREE, 1, &QUAT_represent_integer_params, NULL);
+        found = quat_sampling_random_ideal_O0_given_norm(&sk->secret_ideal, &SEC_DEGREE, 1, &QUAT_represent_integer_params, NULL);
         // BENCH_CODE_2("ideal");
 
         // replacing the secret key ideal by a shorter equivalent one for efficiency
